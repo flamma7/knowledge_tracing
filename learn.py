@@ -27,10 +27,12 @@ def get_selection_probs(arr):
     return (1 - arr) / (len(arr) - sum(arr))
 
 class WorkingMemory:
-    def __init__(self, probs, indices, ledger):
+    def __init__(self, probs, indices, ledger, decay_factor):
         self.probs = probs # Probability I know each index
         self.indices = indices # index of words in working memory
         self.ledger = ledger # user responses
+        self.last_update_time = datetime.datetime.now()
+        self.decay_factor = decay_factor
 
     def add_ledger_block(self, question_ind, question, question_start_time, time_taken, response, correct):
         assert type(correct) == bool
@@ -42,13 +44,21 @@ class WorkingMemory:
             self.indices = np.append(self.indices, new_ind)
         else:
             raise ValueError("Index already present in working memory")
+    
+    def decay_memory(self):
+        now = datetime.datetime.now()
+        time_delta = (now - self.last_update_time).total_seconds()
+        self.probs = (1-self.decay_factor)**(time_delta) * self.probs
+        self.last_update_time = now
 
     def update_prob(self, ind, new_prob):
+        self.decay_memory()
         assert new_prob < 1.0
         self.probs[ind] = new_prob
     
     @property
     def indices_probs(self):
+        self.decay_memory()
         return self.probs[self.indices]
 
     def get_guess_probability(self): # TODO make more complex, weighted based on number of words I've seen
@@ -64,9 +74,7 @@ NEW_WORD_PROB = 0.6
 WORKING_MEMORY_SIZE_START = 5
 pT = 0.15 # Chance I learned the word, after this example --> this may be dependent on working memory size
 pS = 0.2 # Slip probability, chance I screw up even though I know a word
-
-process_noise = 1.0 # TODO need to make this an exponential function? Be careful with this, could be the case that if the probabilities keep
-# dipping lower than NEW_WORD_PROB we will never add a new word!! More likely to forget words I know 50% than 90% and fxn of time and num words I've learned
+DECAY_FACTOR = 0.00005
 
 def load_data():
     french_words = []
@@ -90,7 +98,7 @@ else:
     init_probs = 0.01*np.ones(NUM_WORDS) # 1% chance I know the word beforehand
     sel_probs = get_selection_probs(init_probs)
     indices = np.random.choice(NUM_WORDS, WORKING_MEMORY_SIZE_START,p=sel_probs, replace=False).astype(int)
-    work_mem = WorkingMemory(init_probs, indices, [])
+    work_mem = WorkingMemory(init_probs, indices, [], DECAY_FACTOR)
 
 # LEARN WORDS
 print("q for quit")
